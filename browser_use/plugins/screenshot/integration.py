@@ -64,7 +64,7 @@ def wrap_multi_act(original_multi_act: Callable, plugin: ScreenshotPlugin) -> Ca
         browser_context = getattr(wrapped_multi_act.__self__, 'browser_context', None)
         if browser_context and isinstance(browser_context, BrowserContext):
             try:
-                state = await browser_context.get_state()
+                state = await browser_context.get_state(cache_clickable_elements_hashes=True)
                 # Handle execution with the plugin
                 plugin.handle_execute(state, results)
             except Exception as e:

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import base64
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -111,6 +112,22 @@ class ScreenshotPlugin:
         logger.info(f"Plan saved to {plan_path}")
         return plan_path
     
+    @staticmethod
+    def JSON_to_dict(text):
+        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            try:
+                # 返回解析后的JSON对象
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                # 如果解析失败，返回处理后的文本字符串
+                return text
+        else:
+            # 如果没有找到JSON块，返回处理后的文本字符串
+            return text
+        
+
     def save_results(self, results: List[ActionResult], step_number: Optional[int] = None) -> str:
         """
         Save action results.
@@ -131,7 +148,7 @@ class ScreenshotPlugin:
         # Extract results data
         results_data = [
             {
-                "extracted_content": r.extracted_content,
+                "extracted_content": self.JSON_to_dict(r.extracted_content) if r.extracted_content else None,
                 "error": r.error,
                 "success": r.success,
                 "is_done": r.is_done,
@@ -142,8 +159,9 @@ class ScreenshotPlugin:
         
         # Save results file
         results_path = os.path.join(execute_dir, "results.json")
-        with open(results_path, "w") as f:
-            json.dump(results_data, f, indent=2)
+        with open(results_path, "w", encoding='utf-8') as f:
+            json_str = json.dumps(results_data, indent=2, ensure_ascii=False)
+            f.write(json_str)
         
         logger.info(f"Results saved to {results_path}")
         return results_path
