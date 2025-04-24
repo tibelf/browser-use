@@ -1,6 +1,7 @@
 import logging
 from functools import wraps
 from typing import Callable, List, Tuple, Dict, Any, Union, Awaitable, Optional
+import asyncio
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList, ActionModel, ActionResult
@@ -57,18 +58,39 @@ def wrap_multi_act(original_multi_act: Callable, plugin: ScreenshotPlugin) -> Ca
         actions: List[ActionModel],
         check_for_new_elements: bool = True,
     ) -> List[ActionResult]:
+        # Get the current browser state before execution
+        browser_context = getattr(wrapped_multi_act.__self__, 'browser_context', None)
+        if browser_context and isinstance(browser_context, BrowserContext):
+            try:
+                # Save initial screenshot for the step
+                state = await browser_context.get_state(cache_clickable_elements_hashes=True)
+                screenshot_path = await browser_context.take_screenshot(full_page=plugin.full_page)
+                if screenshot_path:
+                    state.screenshot = screenshot_path
+                plugin.save_screenshot(state, 0, plugin.current_step)
+            except Exception as e:
+                logger.error(f"Error capturing initial screenshot: {e}")
+        
         # Call the original method
         results = await original_multi_act(actions, check_for_new_elements)
         
         # Get the current browser state after execution
-        browser_context = getattr(wrapped_multi_act.__self__, 'browser_context', None)
         if browser_context and isinstance(browser_context, BrowserContext):
             try:
-                state = await browser_context.get_state(cache_clickable_elements_hashes=True)
-                # Handle execution with the plugin
-                plugin.handle_execute(state, results)
+                # Get state and save screenshot for each result
+                for i, result in enumerate(results):
+                    # Get the latest browser state after each action
+                    state = await browser_context.get_state(cache_clickable_elements_hashes=True)
+                    screenshot_path = await browser_context.take_screenshot(full_page=plugin.full_page)
+                    if screenshot_path:
+                        state.screenshot = screenshot_path
+                    plugin.save_screenshot(state, i + 1, plugin.current_step)
+                
+                # Save all results
+                plugin.save_results(results)
+                logger.info(f"Saved results and screenshots for step {plugin.current_step}")
             except Exception as e:
-                logger.error(f"Error capturing screenshot after execution: {e}")
+                logger.error(f"Error capturing screenshots and saving results: {e}")
         
         return results
     
@@ -80,7 +102,8 @@ def wrap_multi_act(original_multi_act: Callable, plugin: ScreenshotPlugin) -> Ca
 def setup_agent_with_screenshot_plugin(
     agent: Agent, 
     screenshot_dir: str = "screenshots",
-    save_plans: bool = True
+    save_plans: bool = True,
+    full_page: bool = True
 ) -> ScreenshotPlugin:
     """
     Set up an agent with the screenshot plugin.
@@ -94,12 +117,13 @@ def setup_agent_with_screenshot_plugin(
         agent: Agent instance to configure
         screenshot_dir: Directory to save screenshots
         save_plans: Whether to save plan information
+        full_page: Whether to capture the full scrollable page
         
     Returns:
         Configured ScreenshotPlugin instance
     """
     # Create the plugin instance
-    plugin = ScreenshotPlugin(base_dir=screenshot_dir, save_plans=save_plans)
+    plugin = ScreenshotPlugin(base_dir=screenshot_dir, save_plans=save_plans, full_page=full_page)
     
     # Set up callbacks
     step_callback, done_callback = create_screenshot_callbacks(plugin)

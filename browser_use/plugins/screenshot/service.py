@@ -20,28 +20,32 @@ class ScreenshotPlugin:
     in a structured directory.
     """
     
-    def __init__(self, base_dir: str = "screenshots", save_plans: bool = True):
+    def __init__(self, base_dir: str = "screenshots", save_plans: bool = True, full_page: bool = True):
         """
         Initialize the screenshot plugin.
         
         Args:
             base_dir: Base directory for saving screenshots and plans
             save_plans: Whether to save plan information
+            full_page: Whether to capture the full scrollable page
         """
         self.base_dir = base_dir
         self.save_plans = save_plans
+        self.full_page = full_page
         self.current_step = 0
         self.plans = []
+        self.current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Create base directory if not exists
         Path(self.base_dir).mkdir(parents=True, exist_ok=True)
         
-    def save_screenshot(self, state: BrowserState, step_number: Optional[int] = None) -> str:
+    def save_screenshot(self, state: BrowserState, result_index: int = 0, step_number: Optional[int] = None) -> str:
         """
         Save a screenshot of the current browser state.
         
         Args:
             state: Browser state containing the screenshot
+            result_index: Index of the result this screenshot corresponds to
             step_number: Custom step number, uses internal counter if None
             
         Returns:
@@ -53,8 +57,8 @@ class ScreenshotPlugin:
         # Create directory for this execution step
         execute_dir = self._create_execute_dir(step_number)
         
-        # Save screenshot
-        screenshot_path = os.path.join(execute_dir, "screenshot.png")
+        # Save screenshot with result index
+        screenshot_path = os.path.join(execute_dir, f"screenshot_{result_index}.png")
         
         if state.screenshot:
             try:
@@ -96,9 +100,9 @@ class ScreenshotPlugin:
             "step_number": step_number,
             "timestamp": datetime.now().isoformat(),
             "current_state": model_output.current_state.model_dump() if model_output.current_state else None,
-            "actions": [action.model_dump() for action in model_output.action],
-            "next_goal": model_output.current_state.next_goal if model_output.current_state else None,
-            "evaluation": model_output.current_state.evaluation_previous_goal if model_output.current_state else None,
+            "actions": [action.model_dump() for action in model_output.action]
+            #"next_goal": model_output.current_state.next_goal if model_output.current_state else None,
+            #"evaluation": model_output.current_state.evaluation_previous_goal if model_output.current_state else None,
         }
         
         # Save plan to the plans list
@@ -179,25 +183,10 @@ class ScreenshotPlugin:
         # we need to subtract 1 to get the correct step number for saving
         actual_step = step_number - 1
         self.current_step = actual_step
-        self.save_screenshot(state, actual_step)
+        
+        # Save initial screenshot for the step
+        self.save_screenshot(state, 0, actual_step)
         self.save_plan(model_output, actual_step)
-    
-    def handle_execute(self, state: BrowserState, results: List[ActionResult]) -> None:
-        """
-        Handle execution result by saving screenshot and results.
-        
-        Args:
-            state: Browser state
-            results: Action results
-        """
-        # Save screenshot and results for current step
-        self.save_screenshot(state)
-        self.save_results(results)
-        
-        # Increment step counter after execution
-        # Note: We increment after saving because the current step's data should be saved
-        # with the current step number before moving to the next step
-        self.current_step += 1
     
     def handle_done(self, history: List[Dict]) -> None:
         """
@@ -231,7 +220,15 @@ class ScreenshotPlugin:
         Returns:
             Path to the execution directory
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dir_path = os.path.join(self.base_dir, f"execute_{step_number:03d}_{timestamp}")
+        dir_path = os.path.join(self.base_dir, f"execute_{step_number:03d}_{self.current_timestamp}")
         Path(dir_path).mkdir(parents=True, exist_ok=True)
         return dir_path 
+
+    async def take_screenshot(self, browser_context) -> str:
+        """Take a screenshot of the current page."""
+        try:
+            screenshot_path = await browser_context.take_screenshot(full_page=self.full_page)
+            return screenshot_path
+        except Exception as e:
+            logger.error(f"Failed to take screenshot: {e}")
+            return None

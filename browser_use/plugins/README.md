@@ -72,11 +72,14 @@ await agent.run()
 ```
 screenshots/
 ├── execute_001_YYYYMMDD_HHMMSS/
-│   ├── screenshot.png
+│   ├── screenshot_0.png        # 步骤初始截图
+│   ├── screenshot_1.png        # 第一个结果的截图
+│   ├── screenshot_2.png        # 第二个结果的截图
 │   ├── plan.json
 │   └── results.json
 ├── execute_002_YYYYMMDD_HHMMSS/
-│   ├── screenshot.png
+│   ├── screenshot_0.png
+│   ├── screenshot_1.png
 │   ├── plan.json
 │   └── results.json
 ...
